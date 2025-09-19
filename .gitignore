@@ -1,0 +1,39 @@
+# Environment variables
+.env
+*.env
+
+# Credentials and keys
+keys/
+!keys/.gitkeep
+*.json
+service-account.json
+
+# Generated data and indexes
+data/
+!data/.gitkeep
+*.faiss
+*.pkl
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+myenv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
