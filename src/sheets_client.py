@@ -16,19 +16,19 @@ creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPE
 client = gspread.authorize(creds)
 
 # Use your spreadsheet ID
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID") or "1hLe_XDskjwP4I8rvaPgo"
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID") or "1hLe_XDskjwP4IDD_iDpMUJ1ALgPsJUlBzc-Z8rvaPgo"
 
 def get_worksheet():
     """Get the worksheet when needed"""
     try:
         spreadsheet = client.open_by_key(SPREADSHEET_ID)  # Use open_by_key for ID
-        return spreadsheet.worksheet("tickets")
+        return spreadsheet.worksheet("AI support")
     except gspread.SpreadsheetNotFound:
         print(f"❌ Spreadsheet with ID '{SPREADSHEET_ID}' not found")
         print("Make sure you've shared it with: sheets-access@supportsystemapi.iam.gserviceaccount.com")
         raise
     except gspread.WorksheetNotFound:
-        print(f"❌ Worksheet 'tickets' not found in the spreadsheet")
+        print(f"❌ Worksheet 'AI support' not found in the spreadsheet")
         raise
     except Exception as e:
         print(f"❌ Error accessing spreadsheet: {e}")
@@ -41,18 +41,17 @@ def create_tickets_worksheet():
         
         # Try to get the worksheet first
         try:
-            worksheet = spreadsheet.worksheet("tickets")
-            print("✅ 'tickets' worksheet already exists")
+            worksheet = spreadsheet.worksheet("AI support")
+            print("✅ 'AI support' worksheet already exists")
             return worksheet
         except gspread.WorksheetNotFound:
             # Create the worksheet
-            print("Creating 'tickets' worksheet...")
-            worksheet = spreadsheet.add_worksheet(title="tickets", rows=1000, cols=10)
-            
+            print("Creating 'AI support' worksheet...")
+            worksheet = spreadsheet.add_worksheet(title="AI support", rows=1000, cols=10)
             # Add headers
-            headers = ["ticket_id", "ticket_content", "ticket_cat", "ticket_timestamp", "ticket_by", "ticket_status"]
+            headers = ["ticket_id", "ticket_content", "ticket_cat", "ticket_timestamp", "ticket_by", "ticket_status", "solution"]
             worksheet.append_row(headers)
-            print("✅ 'tickets' worksheet created with headers")
+            print("✅ 'AI support' worksheet created with headers")
             return worksheet
             
     except Exception as e:
@@ -62,20 +61,24 @@ def create_tickets_worksheet():
 def now_ist_iso():
     """Return current timestamp in ISO format"""
     return datetime.now().isoformat()
-
 def append_ticket(ticket_dict):
     """Append a ticket as a new row to the sheet"""
-    worksheet = get_worksheet()  # Get worksheet when needed
-    row = [
-        ticket_dict.get("ticket_id"),
-        ticket_dict.get("ticket_content"),
-        ticket_dict.get("ticket_cat", ""),
-        ticket_dict.get("ticket_timestamp", now_ist_iso()),
-        ticket_dict.get("ticket_by", "email"),
-        ticket_dict.get("ticket_status", "open")
-    ]
-    worksheet.append_row(row)
-    print("✅ Ticket appended:", row)
+    try:
+        worksheet = get_worksheet()  # Get worksheet when needed
+        row = [
+            ticket_dict.get("ticket_id"),
+            ticket_dict.get("ticket_content"),
+            ticket_dict.get("ticket_cat", ""),
+            ticket_dict.get("ticket_timestamp", now_ist_iso()),
+            ticket_dict.get("ticket_by", "email"),
+            ticket_dict.get("ticket_status", "open"),
+            ticket_dict.get("solution", "")
+        ]
+        worksheet.append_row(row)
+        print("✅ Ticket appended:", row)
+    except Exception as e:
+        print("❌ Failed to append ticket:", e)
+
 
 def find_ticket_row(ticket_id):
     """Find a row number for a given ticket_id"""
