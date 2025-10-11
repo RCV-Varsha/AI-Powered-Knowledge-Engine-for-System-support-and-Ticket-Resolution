@@ -1,3 +1,9 @@
+---
+title: "Workbench Integration"
+category: "extension-capabilities"
+tags: ["workbench", "integration", "layout"]
+---
+
 Extending Workbench
 "Workbench" refers to the overall Visual Studio Code UI that encompasses the following UI components:
 

@@ -1,3 +1,9 @@
+---
+title: "Color Theme Guide"
+category: "extension-guides"
+tags: ["color-theme", "design", "UI"]
+---
+
 Color Theme
 Colors visible in the Visual Studio Code user interface fall in two categories:
 

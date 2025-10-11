@@ -1,3 +1,9 @@
+---
+title: "Web Extensions"
+category: "extension-guides"
+tags: ["web", "browser", "compatibility"]
+---
+
 Web Extensions
 Visual Studio Code can run as an editor in the browser. One example is the github.dev user interface reached by pressing . (the period key) when browsing a repository or Pull Request in GitHub. When VS Code is used in the Web, installed extensions are run in an extension host in the browser, called the 'web extension host'. An extension that can run in a web extension host is called a 'web extension'.
 

@@ -1,3 +1,9 @@
+---
+title: "Telemetry in Extensions"
+category: "extension-guides"
+tags: ["telemetry", "analytics", "events"]
+---
+
 Telemetry extension authors guide
 Visual Studio Code collects usage data and sends it to Microsoft to help improve our products and services. Read our privacy statement and telemetry documentation to learn more.
 

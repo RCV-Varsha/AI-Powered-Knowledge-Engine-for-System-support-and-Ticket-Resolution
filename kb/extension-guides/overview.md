@@ -1,3 +1,9 @@
+---
+title: "Extension Guide Overview"
+category: "extension-guides"
+tags: ["overview", "intro", "structure"]
+---
+
 et Sample	/api/language-extensions/snippet-guide
 Language Configuration Sample	/api/language-extensions/language-configuration-guide
 LSP Sample	/api/language-extensions/language-server-extension-guide

@@ -1,3 +1,9 @@
+---
+title: "Markdown Extension Guide"
+category: "extension-guides"
+tags: ["markdown", "rendering", "syntax"]
+---
+
 Markdown Extension
 Markdown extensions allow you to extend and enhance Visual Studio Code's built-in Markdown preview. This includes changing the look of the preview or adding support for new Markdown syntax.
 

@@ -1,3 +1,9 @@
+---
+title: "AI-Powered Extensions"
+category: "extension-guides"
+tags: ["AI", "machine learning", "intelligence"]
+---
+
 AI extensibility in VS Code
 This article provides an overview of AI extensibility options in Visual Studio Code, helping you choose the right approach for your extension.
 

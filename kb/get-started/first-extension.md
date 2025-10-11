@@ -1,3 +1,9 @@
+---
+title: "First Extension Tutorial"
+category: "get-started"
+tags: ["tutorial", "beginner", "extension"]
+---
+
 Your First Extension
 In this topic, we'll teach you the fundamental concepts for building extensions. Make sure you have Node.js and Git installed.
 

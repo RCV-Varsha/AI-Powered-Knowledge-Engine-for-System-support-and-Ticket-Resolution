@@ -1,3 +1,9 @@
+---
+title: "Bundling Extensions"
+category: "testing-publishing"
+tags: ["bundling", "packaging", "distribution"]
+---
+
 Bundling Extensions
 The first reason to bundle your Visual Studio Code extension is to make sure it works for everyone using VS Code on any platform. Only bundled extensions can be used in VS Code for Web environments like github.dev and vscode.dev. When VS Code is running in the browser, it can only load one file for your extension so the extension code needs to be bundled into one single web-friendly JavaScript file. This also applies to Notebook Output Renderers, where VS Code will also only load one file for your renderer extension.
 

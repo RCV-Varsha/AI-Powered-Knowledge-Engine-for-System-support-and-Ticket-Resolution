@@ -25,14 +25,13 @@ def suggest_articles(ticket_text, top_k=5):
         return []
     
     try:
-        results = retriever.get_relevant_documents(ticket_text)
+        results = retriever.invoke(ticket_text)  # Updated from get_relevant_documents
         top_results = results[:top_k]
         _log_article_usage(ticket_text, top_results)
         return top_results
     except Exception as e:
         logging.error(f"Error suggesting articles: {e}")
         return []
-
 def _log_article_usage(ticket_text, suggested_articles):
     """Log article suggestions for analytics tracking"""
     try:

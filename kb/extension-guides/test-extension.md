@@ -1,3 +1,9 @@
+---
+title: "Testing Extensions"
+category: "extension-guides"
+tags: ["testing", "unit-tests", "integration"]
+---
+
 Testing API
 The Testing API allows Visual Studio Code extensions to discover tests in the workspace and publish results. Users can execute tests in the Test Explorer view, from decorations, and inside commands. With these new APIs, Visual Studio Code supports richer displays of outputs and diffs than was previously possible.
 

@@ -1,3 +1,9 @@
+---
+title: "Continuous Integration Setup"
+category: "testing-publishing"
+tags: ["CI", "automation", "testing"]
+---
+
 Continuous Integration
 Extension integration tests can be run on CI services. The @vscode/test-electron library helps you set up extension tests on CI providers and contains a sample extension setup on Azure Pipelines. You can check out the build pipeline or jump directly to the azure-pipelines.yml file.
 

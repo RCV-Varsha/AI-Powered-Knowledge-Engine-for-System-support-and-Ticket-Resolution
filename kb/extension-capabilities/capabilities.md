@@ -1,3 +1,10 @@
+---
+title: "Extension Capabilities Overview"
+category: "extension-capabilities"
+tags: ["capabilities", "features", "API"]
+---
+
+
 Common Capabilities
 Common Capabilities are important building blocks for your extensions. Almost all extensions use some of these functionalities. Here is how you can take advantage of them.
 

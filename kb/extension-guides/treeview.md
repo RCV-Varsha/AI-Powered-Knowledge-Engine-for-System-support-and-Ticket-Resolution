@@ -1,3 +1,9 @@
+---
+title: "Treeview Integration"
+category: "extension-guides"
+tags: ["treeview", "UI", "navigation"]
+---
+
 Tree View API
 The Tree View API allows extensions to show content in the sidebar in Visual Studio Code. This content is structured as a tree and conforms to the style of the built-in views of VS Code.
 

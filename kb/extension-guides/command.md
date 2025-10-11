@@ -1,3 +1,9 @@
+---
+title: "Command Registration"
+category: "extension-guides"
+tags: ["commands", "activation", "API"]
+---
+
 Commands
 Commands trigger actions in Visual Studio Code. If you have ever configured a keybinding, then you've worked with commands. Commands are also used by extensions to expose functionality to users, bind to actions in VS Code's UI, and implement internal logic.
 

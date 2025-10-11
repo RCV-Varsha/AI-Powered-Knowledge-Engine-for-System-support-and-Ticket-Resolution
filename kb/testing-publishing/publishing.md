@@ -1,3 +1,9 @@
+---
+title: "Publishing Extensions"
+category: "testing-publishing"
+tags: ["publishing", "marketplace", "release"]
+---
+
 Publishing Extensions
 Once you have made a high-quality extension, you can publish it to the VS Code Extension Marketplace so others can find, download, and use your extension. Alternatively, you can package an extension into the installable VSIX format and share it with other users.
 

@@ -1,3 +1,9 @@
+---
+title: "Custom Editors"
+category: "extension-guides"
+tags: ["editors", "customization", "UI"]
+---
+
 Custom Editor API
 Custom editors allow extensions to create fully customizable read/write editors that are used in place of VS Code's standard text editor for specific types of resources. They have a wide variety of use cases, such as:
 

@@ -162,7 +162,7 @@ def process_ticket_submission(ticket_content, web_context=None):
         full_context = kb_context
         if web_context is not None and str(web_context).strip():
             full_context += f"\n\n[Web Search]\n{web_context}"
-        solution, sol_source = resolver.safe_generate_solution(ticket_content, category, full_context)
+        solution, sol_source = resolver.safe_generate_solution(ticket_content)
         ticket_data = {
             "ticket_id": ticket_id,
             "ticket_content": ticket_content,

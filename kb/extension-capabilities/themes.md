@@ -1,3 +1,10 @@
+---
+title: "Themes in VS Code Extensions"
+category: "extension-capabilities"
+tags: ["themes", "UI", "customization"]
+---
+
+
 Theming
 In Visual Studio Code, there are three types of themes:
 

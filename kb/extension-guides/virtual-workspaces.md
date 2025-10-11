@@ -1,3 +1,10 @@
+---
+title: "Virtual Workspaces"
+category: "extension-guides"
+tags: ["virtual", "workspace", "multi-root"]
+---
+
+
 Virtual Workspaces
 Extensions like the GitHub Repositories extension open VS Code on one or more folders backed by a file system provider. When an extension implements a file system provider, workspace resources may not be located on the local disk, but be virtual, located on a server or the cloud, and editing operations happen there.
 

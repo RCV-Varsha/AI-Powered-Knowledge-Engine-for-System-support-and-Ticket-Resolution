@@ -1,3 +1,9 @@
+---
+title: "Notebook API Guide"
+category: "extension-guides"
+tags: ["notebook", "API", "interactive"]
+---
+
 Notebook API
 The Notebook API allows Visual Studio Code extensions to open files as notebooks, execute notebook code cells, and render notebook outputs in a variety of rich and interactive formats. You may know of popular notebook interfaces like Jupyter Notebook or Google Colab – the Notebook API allows for similar experiences inside Visual Studio Code.
 

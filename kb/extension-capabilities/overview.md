@@ -1,3 +1,10 @@
+---
+title: "Extension Architecture Overview"
+category: "extension-capabilities"
+tags: ["architecture", "overview", "design"]
+---
+
+
 Extension Capabilities Overview
 Visual Studio Code offers many ways for extensions to extend its capabilities. It can sometimes be hard to find the right Contribution Points and VS Code API to use. This topic splits extension capabilities into a few categories. Each category describes:
 

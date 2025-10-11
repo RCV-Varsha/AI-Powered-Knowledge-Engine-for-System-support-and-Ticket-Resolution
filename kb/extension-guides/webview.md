@@ -1,3 +1,8 @@
+---
+title: "Webview Integration"
+category: "extension-guides"
+tags: ["webview", "UI", "iframe"]
+---
 Webview API
 The webview API allows extensions to create fully customizable views within Visual Studio Code. For example, the built-in Markdown extension uses webviews to render Markdown previews. Webviews can also be used to build complex user interfaces beyond what VS Code's native APIs support.
 
