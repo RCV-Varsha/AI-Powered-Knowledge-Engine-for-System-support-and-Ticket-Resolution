@@ -1,0 +1,14 @@
+[Unit]
+Description=Support System Category Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/path/to/your/project
+ExecStart=/path/to/your/venv/bin/python src/notification_scheduler.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

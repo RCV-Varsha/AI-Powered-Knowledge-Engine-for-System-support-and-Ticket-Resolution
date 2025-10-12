@@ -1,17 +1,19 @@
+# rag_pipeline_cpu.py
 
 import os
+import json
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from transformers import pipeline
-import json
-
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 # --- Config ---
-LOCAL_DOCS_FILE = "data/pilot_dataset_augmented.json"  # Use your local JSON file
+LOCAL_DOCS_FILE = "data/pilot_dataset_augmented.json"
+VECTORSTORE_PATH = "vectorstore/db_faiss"
+MODEL_NAME = "distilgpt2"  # small, CPU-friendly model
 
-
+# --- Load documents from local JSON ---
 def load_docs_from_local_json(json_path=LOCAL_DOCS_FILE):
     if not os.path.exists(json_path):
         print(f"❌ Local docs file not found: {json_path}")
@@ -22,6 +24,7 @@ def load_docs_from_local_json(json_path=LOCAL_DOCS_FILE):
     print(f"✅ Loaded {len(docs)} docs from local JSON.")
     return docs
 
+# --- Split documents into chunks ---
 def split_documents(docs, chunk_size=500, chunk_overlap=50):
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
@@ -29,42 +32,66 @@ def split_documents(docs, chunk_size=500, chunk_overlap=50):
     )
     return splitter.split_documents(docs)
 
-
-# --- Quick Test ---
-if __name__ == "__main__":
-    # Step 1: Load docs from local JSON
-    docs = load_docs_from_local_json()
-
-    # Step 2: Split docs into chunks
-    chunks = split_documents(docs)
-
-
-    # Step 3: Build or load FAISS index with HuggingFaceEmbeddings
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    if not os.path.exists("vectorstore/db_faiss/index.faiss"):
-        vector_store = FAISS.from_documents(chunks, embeddings)
-        vector_store.save_local("vectorstore/db_faiss")
+# --- Build or load FAISS index ---
+def get_vectorstore(chunks, embeddings_model):
+    if not os.path.exists(os.path.join(VECTORSTORE_PATH, "index.faiss")):
+        vector_store = FAISS.from_documents(chunks, embeddings_model)
+        vector_store.save_local(VECTORSTORE_PATH)
+        print(f"✅ FAISS vectorstore created and saved at {VECTORSTORE_PATH}")
     else:
-        vector_store = FAISS.load_local("vectorstore/db_faiss", embeddings)
+        vector_store = FAISS.load_local(VECTORSTORE_PATH, embeddings_model)
+        print(f"✅ FAISS vectorstore loaded from {VECTORSTORE_PATH}")
+    return vector_store
 
-    # Step 4: Use a local Hugging Face model for Q&A
-    qa_pipeline = pipeline("text-generation", model="distilgpt2", device=-1)
+# --- Build QA pipeline ---
+def get_qa_pipeline(model_name=MODEL_NAME):
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name)  # CPU only
+    qa_pipeline = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=256
+    )
+    return qa_pipeline
 
-    # Step 5: Ask questions interactively
+# --- Interactive Q&A ---
+def ask_questions(vector_store, qa_pipeline):
+    print("\n💡 RAG QA system ready. Type 'exit' to quit.")
     while True:
-        query = input("\n💬 Ask a question (or type 'exit' to quit): ")
+        query = input("\n💬 Ask a question: ")
         if query.lower() == "exit":
             break
 
-        # Retrieve relevant docs
+        # Retrieve relevant documents
         retrieved_docs = vector_store.similarity_search(query, k=3)
         context = "\n".join([doc.page_content for doc in retrieved_docs])
-        prompt = f"Context: {context}\n\nQuestion: {query}\nAnswer:"
-        result = qa_pipeline(prompt, max_length=256, do_sample=False)[0]["generated_text"]
 
+        # Instruction prompt for better accuracy
+        prompt = (
+            f"You are a helpful assistant. Answer the question using ONLY the context below. "
+            f"If the answer is not in the context, respond with 'I don't know'.\n\n"
+            f"Context:\n{context}\n\nQuestion: {query}\nAnswer:"
+        )
+
+        result = qa_pipeline(prompt, max_length=256, do_sample=False)[0]["generated_text"]
         print("\n✨ Answer:")
-        print(result)
+        print(result.strip())
 
         print("\n📌 Sources:")
         for i, doc in enumerate(retrieved_docs, 1):
-            print(f"  {i}. {doc.page_content[:200]}...")
+            print(f"  {i}. {doc.page_content[:200]}...")  # first 200 chars
+
+# --- Main ---
+if __name__ == "__main__":
+    docs = load_docs_from_local_json()
+    if not docs:
+        exit()
+
+    chunks = split_documents(docs)
+
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    vector_store = get_vectorstore(chunks, embeddings)
+
+    qa_pipeline = get_qa_pipeline()
+    ask_questions(vector_store, qa_pipeline)

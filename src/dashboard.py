@@ -6,7 +6,10 @@ from datetime import datetime, timedelta
 import uuid
 import plotly.express as px
 import plotly.graph_objects as go
-
+from sentence_transformers import SentenceTransformer
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain.retrievers import ContextualCompressionRetriever
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
 # Import your modules
 try:
     from sheets_client import append_ticket, update_ticket_fields, get_worksheet, find_ticket_row
@@ -16,6 +19,7 @@ try:
         get_content_gaps, generate_improvement_alerts, get_article_title
     )
     from tavily_client import TAVILY_AVAILABLE, TavilySearchClient, create_search_context
+    from notification_system import NotificationManager, load_config_from_env
     def get_search_client():
         return TavilySearchClient()
 except ImportError as e:
@@ -29,8 +33,7 @@ st.set_page_config(
     page_icon="🎫"
 )
 
-# Custom CSS for better styling
-
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 # Improved CSS for better text contrast
 st.markdown("""
 <style>
@@ -81,7 +84,8 @@ if TAVILY_AVAILABLE:
 # Cached functions
 @st.cache_resource(show_spinner="Loading AI resolver...")
 def get_resolver():
-    return MultiModelResolver()
+    # Enable web search if toggled in the UI later
+    return MultiModelResolver(enable_web_search=st.session_state.get('web_search_enabled', False))
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_analytics_data():
@@ -110,12 +114,10 @@ menu = st.sidebar.radio(
     "Select an option",
     [
         "📝 Submit New Ticket",
-        "📋 Process Open Tickets", 
-        "🗑️ Manage Resolved Tickets",
         "📊 System Analytics",
         "📈 Article Performance",
         "⚠️ Content Improvement Alerts",
-        "🌐 Tavily Web Search"
+        "🔔 Category Monitoring"
     ]
 )
 
@@ -162,7 +164,12 @@ def process_ticket_submission(ticket_content, web_context=None):
         full_context = kb_context
         if web_context is not None and str(web_context).strip():
             full_context += f"\n\n[Web Search]\n{web_context}"
-        solution, sol_source = resolver.safe_generate_solution(ticket_content)
+        solution, sol_source = resolver.safe_generate_solution(
+            ticket_content,
+            category,
+            full_context,
+            use_web_search=st.session_state.get('web_search_enabled', False),
+        )
         ticket_data = {
             "ticket_id": ticket_id,
             "ticket_content": ticket_content,
@@ -187,7 +194,8 @@ def process_ticket_submission(ticket_content, web_context=None):
             "sol_source": sol_source,
             "suggestions": suggestions,
             "ticket_data": ticket_data,
-            "sheets_success": sheets_success
+            "sheets_success": sheets_success,
+            "web_context": web_context
         }
 # ===== PAGES =====
 
@@ -235,6 +243,12 @@ if menu == "📝 Submit New Ticket":
                 # Display AI solution
                 st.subheader("🤖 AI-Generated Solution")
                 st.markdown(f"<div class='success-card'>{result['solution']}</div>", unsafe_allow_html=True)
+
+                # Display Tavily enrichment if available
+                if result.get("web_context") and "No relevant results" not in result["web_context"]:
+                    st.subheader("🔎 Additional Context from Web Search")
+                    st.info(result["web_context"])
+
 
     # Feedback section (shown after ticket submission)
     if st.session_state.ticket_submitted and st.session_state.current_ticket_id:
@@ -334,7 +348,10 @@ elif menu == "📋 Process Open Tickets":
                             # Get suggestions and generate solution
                             suggestions = suggest_articles(content)
                             kb_context = "\n".join([doc.page_content[:300] for doc in suggestions])
-                            solution, source = resolver.safe_generate_solution(content, category, kb_context)
+                            solution, source = resolver.safe_generate_solution(
+                                content, category, kb_context,
+                                use_web_search=st.session_state.get('web_search_enabled', False)
+                            )
                             
                             st.write("**Proposed Solution:**")
                             st.write(solution)
@@ -457,9 +474,6 @@ elif menu == "📊 System Analytics":
             )
             fig_category.update_layout(xaxis_title="Category", yaxis_title="Number of Tickets")
             st.plotly_chart(fig_category, use_container_width=True)
-            # Show web search context if available (move outside chart call)
-            if 'web_context' in locals() and web_context:
-                st.markdown("<div class='web-search-card'><b>Web Search Context:</b><br>" + web_context + "</div>", unsafe_allow_html=True)
         
         # Timeline analysis
         st.subheader("📈 Ticket Timeline")
@@ -702,6 +716,182 @@ elif menu == "⚠️ Content Improvement Alerts":
                             st.rerun()
                         else:
                             st.error("Failed to clear analytics data")
+
+elif menu == "🔔 Category Monitoring":
+    st.header("🔔 Category Performance Monitoring")
+    
+    # Configuration section
+    st.subheader("⚙️ Notification Configuration")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Slack Settings**")
+        slack_enabled = st.checkbox("Enable Slack Notifications", value=False)
+        slack_webhook = st.text_input("Slack Webhook URL", placeholder="https://hooks.slack.com/services/...")
+        slack_channel = st.text_input("Slack Channel", value="#support-alerts")
+    
+    with col2:
+        st.markdown("**Email Settings**")
+        email_enabled = st.checkbox("Enable Email Notifications", value=False)
+        smtp_server = st.text_input("SMTP Server", value="smtp.gmail.com")
+        smtp_port = st.number_input("SMTP Port", value=587)
+        admin_email = st.text_input("Admin Email", placeholder="admin@yourcompany.com")
+    
+    # Monitoring thresholds
+    st.subheader("📊 Monitoring Thresholds")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        satisfaction_threshold = st.slider("Satisfaction Threshold", 0.0, 1.0, 0.6, 0.1)
+        min_tickets = st.number_input("Min Tickets for Analysis", value=5)
+    
+    with col2:
+        volume_threshold = st.number_input("Volume Alert Threshold", value=10)
+        time_window = st.number_input("Time Window (hours)", value=24)
+    
+    with col3:
+        cooldown_hours = st.number_input("Notification Cooldown (hours)", value=6)
+    
+    # Manual monitoring check
+    st.subheader("🔍 Manual Monitoring Check")
+    
+    if st.button("🚀 Run Category Analysis", use_container_width=True):
+        with st.spinner("Analyzing category performance..."):
+            try:
+                # Create temporary config
+                from notification_system import NotificationConfig
+                config = NotificationConfig(
+                    slack_enabled=slack_enabled,
+                    slack_webhook_url=slack_webhook,
+                    slack_channel=slack_channel,
+                    smtp_enabled=email_enabled,
+                    smtp_server=smtp_server,
+                    smtp_port=smtp_port,
+                    smtp_username="",  # Would need to be configured
+                    smtp_password="",  # Would need to be configured
+                    admin_email=admin_email,
+                    min_tickets_for_analysis=min_tickets,
+                    satisfaction_threshold=satisfaction_threshold,
+                    volume_threshold=volume_threshold,
+                    time_window_hours=time_window,
+                    cooldown_hours=cooldown_hours
+                )
+                
+                manager = NotificationManager(config)
+                
+                # Run analysis
+                category_stats = manager.monitor.analyze_category_performance()
+                problematic_categories = manager.monitor.identify_problematic_categories(category_stats)
+                
+                # Display results
+                if not category_stats:
+                    st.warning("No ticket data found for analysis")
+                else:
+                    st.success(f"Analysis complete! Found {len(category_stats)} categories with data")
+                    
+                    # Show category performance
+                    st.subheader("📈 Category Performance Summary")
+                    
+                    if category_stats:
+                        # Create performance dataframe
+                        perf_data = []
+                        for category, stats in category_stats.items():
+                            perf_data.append({
+                                'Category': category,
+                                'Total Tickets': stats['total_tickets'],
+                                'Satisfied': stats['satisfied_tickets'],
+                                'Unsatisfied': stats['unsatisfied_tickets'],
+                                'Satisfaction Rate': f"{stats['satisfaction_rate']:.1%}",
+                                'Status': '✅ Good' if stats['satisfaction_rate'] >= satisfaction_threshold else '⚠️ Needs Attention'
+                            })
+                        
+                        perf_df = pd.DataFrame(perf_data)
+                        st.dataframe(perf_df, use_container_width=True)
+                        
+                        # Show problematic categories
+                        if problematic_categories:
+                            st.subheader("🚨 Problematic Categories")
+                            
+                            for cat_report in problematic_categories:
+                                category = cat_report['category']
+                                stats = cat_report['stats']
+                                issues = cat_report['issues']
+                                priority = cat_report['priority']
+                                
+                                priority_color = "🔴" if priority == 'high' else "🟡"
+                                
+                                with st.expander(f"{priority_color} {category.upper()} ({priority.upper()} PRIORITY)"):
+                                    st.write(f"**Satisfaction Rate:** {stats['satisfaction_rate']:.1%} ({stats['satisfied_tickets']}/{stats['total_tickets']})")
+                                    st.write(f"**Volume:** {stats['total_tickets']} tickets in {time_window} hours")
+                                    
+                                    st.write("**Issues Identified:**")
+                                    for issue in issues:
+                                        severity_emoji = "🔴" if issue['severity'] == 'high' else "🟡"
+                                        st.write(f"- {severity_emoji} {issue['message']}")
+                                    
+                                    # Show recent tickets
+                                    if stats['recent_tickets']:
+                                        st.write("**Recent Tickets:**")
+                                        for ticket in stats['recent_tickets'][-5:]:
+                                            status_emoji = "✅" if ticket['satisfied'] else "❌"
+                                            st.write(f"- {status_emoji} {ticket['content']}...")
+                        else:
+                            st.success("🎉 All categories are performing well!")
+                    
+                    # Test notifications
+                    if problematic_categories and (slack_enabled or email_enabled):
+                        st.subheader("📤 Test Notifications")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            if slack_enabled and slack_webhook:
+                                if st.button("📱 Send Slack Test"):
+                                    try:
+                                        from notification_system import SlackNotifier
+                                        notifier = SlackNotifier(slack_webhook, slack_channel)
+                                        success = notifier.send_alert(problematic_categories)
+                                        if success:
+                                            st.success("Slack notification sent!")
+                                        else:
+                                            st.error("Failed to send Slack notification")
+                                    except Exception as e:
+                                        st.error(f"Slack error: {e}")
+                        
+                        with col2:
+                            if email_enabled and admin_email:
+                                st.info("Email notifications require SMTP credentials to be configured in environment variables")
+                
+            except Exception as e:
+                st.error(f"Error running analysis: {e}")
+    
+    # Scheduled monitoring info
+    st.subheader("⏰ Automated Monitoring")
+    
+    st.info("""
+    **Automated Monitoring Setup:**
+    
+    To enable automatic monitoring, you can:
+    
+    1. **Run the scheduler script:**
+       ```bash
+       python src/notification_scheduler.py
+       ```
+    
+    2. **Set up environment variables** in a `.env` file:
+       ```
+       SLACK_ENABLED=true
+       SLACK_WEBHOOK_URL=your_webhook_url
+       ADMIN_EMAIL=admin@yourcompany.com
+       # ... other settings
+       ```
+    
+    3. **Configure thresholds** as needed for your organization.
+    
+    The system will automatically check category performance every 2 hours and send alerts when thresholds are exceeded.
+    """)
 
 # Footer
 st.divider()

@@ -1,8 +1,18 @@
-# Environment variables (contains sensitive information)
+# Environment variables
 .env
-.env.local
-.env.production
-.env.backup
+*.env
+
+# Credentials and keys
+keys/
+!keys/.gitkeep
+*.json
+service-account.json
+
+# Generated data and indexes
+data/
+!data/.gitkeep
+*.faiss
+*.pkl
 
 # Python
 __pycache__/
@@ -10,88 +20,20 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
-myenv/
-venv/
-ENV/
 env/
-.venv/
+venv/
+myenv/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
 # OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
 # Logs
 *.log
 logs/
-log/
-
-# Data files
-*.json
-*.jsonl
-*.csv
-*.xlsx
-*.xls
-
-# Session files
-sessions.json
-otp_sessions.json
-admin_sessions.json
-manual_reviews.json
-admins.json
-users.json
-
-# Temporary files
-*.tmp
-*.temp
-temp/
-tmp/
-
-# Streamlit
-.streamlit/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pytest
-.pytest_cache/
-
-# Coverage reports
-htmlcov/
-.coverage
-.coverage.*
-coverage.xml
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json

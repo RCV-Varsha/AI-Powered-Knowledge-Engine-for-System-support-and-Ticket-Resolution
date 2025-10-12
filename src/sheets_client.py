@@ -9,7 +9,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/drive"]
 
 load_dotenv()   
-SERVICE_ACCOUNT_FILE = os.getenv("SERVICE_ACCOUNT_FILE") or r"C:\Users\rgukt\OneDrive\Desktop\AI PROJECT_BATCH1\keys\service-account.json"
+SERVICE_ACCOUNT_FILE = os.getenv("SERVICE_ACCOUNT_FILE") or r"C:\Users\CHAKRA VARSHINI\Downloads\AI-Powered-Knowledge-Engine\AI Project_Batch1\keys\service-account.json"
 
 print(f"Service account file exists: {os.path.exists(SERVICE_ACCOUNT_FILE)}")
 creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)

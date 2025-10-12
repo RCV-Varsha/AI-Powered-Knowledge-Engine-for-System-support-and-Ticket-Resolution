@@ -8,6 +8,33 @@ from datetime import datetime
 from kb_processor import load_kb_retriever
 import logging
 
+from faiss_retriever import get_faiss_retriever
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import RetrievalQA
+
+# -----------------------------
+# New function: AI-powered solution
+# -----------------------------
+def get_ai_solution(ticket_text):
+    # Load FAISS retriever
+    retriever = get_faiss_retriever(k=5)
+    if not retriever:
+        return "❌ KB retriever not ready. Try again later."
+
+    # Build RAG chain
+    llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=retriever,
+        return_source_documents=True
+    )
+
+    # Run query and get answer
+    answer = qa_chain.run(ticket_text)
+    return answer
+
+
 # Logging setup
 logging.basicConfig(level=logging.INFO)
 
@@ -16,22 +43,30 @@ ARTICLE_LOG_PATH = Path("article_usage_log.jsonl")
 TICKET_LOG_PATH = Path("ticket_log.jsonl")
 
 def suggest_articles(ticket_text, top_k=5):
-    """
-    Suggest relevant articles for a given ticket text with usage tracking.
-    """
     retriever = load_kb_retriever()
     if not retriever:
         logging.warning("Knowledge base retriever not available")
         return []
-    
+
     try:
-        results = retriever.invoke(ticket_text)  # Updated from get_relevant_documents
-        top_results = results[:top_k]
+        results = retriever.invoke(ticket_text)  # or retriever.get_relevant_documents(ticket_text)
+        
+        seen_sources = set()
+        top_results = []
+        for doc in results:
+            source = doc.metadata.get('source', 'unknown')
+            if source not in seen_sources:
+                top_results.append(doc)
+                seen_sources.add(source)
+            if len(top_results) >= top_k:
+                break
+
         _log_article_usage(ticket_text, top_results)
         return top_results
     except Exception as e:
         logging.error(f"Error suggesting articles: {e}")
         return []
+
 def _log_article_usage(ticket_text, suggested_articles):
     """Log article suggestions for analytics tracking"""
     try:

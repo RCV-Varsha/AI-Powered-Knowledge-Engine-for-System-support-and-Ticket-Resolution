@@ -1,0 +1,622 @@
+# src/categorizer.py
+"""
+Improved categorizer module.
+- Preserves original Fast keyword/regex categorizer and LLM categorizer.
+- Adds an MLCategorizer (TF-IDF + LogisticRegression) that trains on data/pilot_dataset.json
+  and saves model to data/models/.
+- Improved hybrid selection: prefer ML prediction if confidence high, else fall back to LLM/fast.
+- Defensive: if sklearn not installed, falls back to original fast categorizer entirely.
+"""
+
+import os
+import re
+import json
+import logging
+from pathlib import Path
+from typing import Dict, List
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+# --- Categories (extend/adjust as needed) ---
+CATEGORIES = {
+    "extension_development": {
+        "description": "Creating, building, and setting up VS Code extensions",
+        "keywords": ["extension", "develop", "build", "new extension", "scaffold", "setup", "activation", "manifest"],
+        "patterns": [r"\bcreate.*extension", r"\bbuild.*extension", r"yo code", r"scaffold", r"\bactivation\b"]
+    },
+    "api_usage": {
+        "description": "Using VS Code APIs, commands, workspace, and window operations",
+        "keywords": ["api", "command", "workspace", "window", "register", "vscode", "intellisense", "code action"],
+        "patterns": [r"\bapi\b", r"register.*command", r"vscode\.", r"workspace\.", r"code action"]
+    },
+    "troubleshooting": {
+        "description": "Debugging, fixing errors, and resolving extension issues",
+        "keywords": ["error", "debug", "crash", "not working", "failed", "problem", "fix", "issue", "activation failed"],
+        "patterns": [r"not (working|loading)", r"error", r"failed", r"crash", r"debug"]
+    },
+    "publishing": {
+        "description": "Publishing extensions to marketplace, packaging, and distribution",
+        "keywords": ["publish", "vsce", "marketplace", "package", "submit", "release", "vsix"],
+        "patterns": [r"publish", r"vsce", r"marketplace", r"vsix", r"package"]
+    },
+    "debugging": {
+        "description": "Debugging extension runtime, activation events, logs",
+        "keywords": ["debug", "trace", "log", "breakpoint", "stack", "stack trace", "activation event"],
+        "patterns": [r"\b(debug|trace|breakpoint|stack\s+trace)\b"]
+    },
+    "configuration": {
+        "description": "Settings, preferences, workspace and environment configuration",
+        "keywords": ["configure", "settings", "setup", "preferences", "environment", "path", "telemetry"],
+        "patterns": [r"\b(config|configure|settings|setup|preferences)\b"]
+    },
+    "compatibility": {
+        "description": "Platform and version compatibility issues",
+        "keywords": ["version", "compatible", "incompatible", "platform", "os", "insiders"],
+        "patterns": [r"\b(compatible|incompatible|version|platform|os|insiders)\b"]
+    },
+    "performance": {
+        "description": "Performance issues: slow, lag, memory, CPU",
+        "keywords": ["slow", "lag", "optimize", "performance", "speed", "memory", "cpu", "freeze"],
+        "patterns": [r"\b(slow|lag|optimi[sz]e|speed|performance|memory|cpu)\b"]
+    },
+    "installation": {
+        "description": "Install, packaging, dependencies, build issues",
+        "keywords": ["install", "installation", "setup", "dependency", "package", "build", "compile", "vsix"],
+        "patterns": [r"\b(install|installation|setup|dependency|build|compile|vsix)\b"]
+    },
+    "authentication": {
+        "description": "OAuth, tokens, login, credentials",
+        "keywords": ["login", "signin", "authenticate", "password", "token", "credential", "oauth"],
+        "patterns": [r"\b(login|sign[\s-]?in|password|token|credential|oauth)\b"]
+    },
+    "general_query": {
+        "description": "General questions and overviews",
+        "keywords": ["explain", "overview", "documentation", "recommendation", "pattern", "best practice"],
+        "patterns": [r"\b(explain|overview|documentation|recommendation|best practice)\b"]
+    }
+}
+
+# --- Helpers ---
+DATA_DIR = Path("data")
+MODEL_DIR = DATA_DIR / "models"
+MODEL_DIR.mkdir(parents=True, exist_ok=True)
+PILOT_DATA = DATA_DIR / "pilot_dataset.json"  # your 60-sample dataset
+ML_MODEL_FILE = MODEL_DIR / "tfidf_logreg.joblib"
+VECT_FILE = MODEL_DIR / "tfidf_vectorizer.joblib"
+LABELS_FILE = MODEL_DIR / "labels.json"
+
+# --- Fast Categorizer (your earlier logic, slightly improved) ---
+class Categorizer:
+    def __init__(self):
+        self.classification_cache = {}
+        self.stats = {"total_classifications": 0, "cache_hits": 0}
+        self.compiled_patterns = {
+            cat: [re.compile(p, re.IGNORECASE) for p in data.get("patterns", [])]
+            for cat, data in CATEGORIES.items()
+        }
+        logger.info("Fast Categorizer initialized")
+
+    def _score_text(self, text: str) -> Dict[str, int]:
+        text_lower = text.lower()
+        scores = {}
+        for cat, data in CATEGORIES.items():
+            score = 0
+            for kw in data.get("keywords", []):
+                # match whole word or phrase
+                if kw.lower() in text_lower:
+                    score += 2
+            for p in self.compiled_patterns.get(cat, []):
+                if p.search(text):
+                    score += 3
+            scores[cat] = score
+        return scores
+
+    def classify(self, text: str) -> Dict:
+        key = text.strip().lower()
+        if key in self.classification_cache:
+            self.stats["cache_hits"] += 1
+            return self.classification_cache[key]
+
+        self.stats["total_classifications"] += 1
+        scores = self._score_text(text)
+        best_cat = max(scores, key=scores.get)
+        best_score = scores[best_cat]
+        if best_score == 0:
+            result = {"category": "general_query", "confidence": 0.35, "method": "fast_fallback", "score": 0}
+        else:
+            confidence = min(0.95, 0.35 + best_score * 0.12)
+            result = {"category": best_cat, "confidence": round(confidence, 2), "method": "fast_keywords", "score": best_score}
+
+        self.classification_cache[key] = result
+        return result
+
+    def get_stats(self):
+        hit_rate = self.stats["cache_hits"] / max(1, self.stats["total_classifications"])
+        return {
+            "total_classifications": self.stats["total_classifications"],
+            "cache_hits": self.stats["cache_hits"],
+            "cache_hit_rate": hit_rate,
+            "categories_available": len(CATEGORIES)
+        }
+
+# --- LLM Categorizer (keep as-is, defensive) ---
+class LLMCategorizer:
+    def __init__(self, llm_client=None):
+        self.llm_client = llm_client
+        self.stats = {"total_classifications": 0, "llm_successes": 0, "llm_failures": 0}
+        logger.info("LLM Categorizer initialized")
+
+    def classify(self, text: str) -> Dict:
+        self.stats["total_classifications"] += 1
+        if not self.llm_client:
+            return {"category": "general_query", "confidence": 0.5, "method": "llm_no_client"}
+
+        prompt = f"""Categorize this ticket into one of {list(CATEGORIES.keys())}: {text}
+Return only JSON: {{'category': '...', 'confidence': 0.xx}}"""
+
+        try:
+            response = self.llm_client.invoke(prompt)
+            content = response.content.strip()
+            if content.startswith("```"):
+                content = re.sub(r"```(json)?", "", content).strip()
+            result = json.loads(content)
+            cat = result.get("category", "general_query")
+            confidence = result.get("confidence", 0.5)
+            if cat not in CATEGORIES:
+                cat = "general_query"
+                confidence = 0.3
+            self.stats["llm_successes"] += 1
+            return {"category": cat, "confidence": confidence, "method": "llm_semantic"}
+        except Exception as e:
+            logger.error(f"LLM failure: {e}")
+            self.stats["llm_failures"] += 1
+            return {"category": "general_query", "confidence": 0.5, "method": "llm_fallback"}
+
+    def get_stats(self):
+        success_rate = self.stats["llm_successes"] / max(1, self.stats["total_classifications"])
+        return {
+            "total_classifications": self.stats["total_classifications"],
+            "llm_successes": self.stats["llm_successes"],
+            "llm_failures": self.stats["llm_failures"],
+            "success_rate": success_rate
+        }
+
+# --- ML Categorizer: TF-IDF + Logistic Regression (defensive) ---
+class MLCategorizer:
+    """
+    Tries to load a persisted TF-IDF + LogisticRegression model from data/models/.
+    If not available and sklearn exists, trains a model on data/pilot_dataset.json.
+    Falls back gracefully to None (caller should handle).
+    """
+    def __init__(self):
+        self.available = False
+        self.model = None
+        self.vectorizer = None
+        self.labels = []
+        self.stats = {"trained": False, "total_predictions": 0}
+        # Attempt to import sklearn
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.pipeline import make_pipeline
+            from joblib import dump, load
+            self.TfidfVectorizer = TfidfVectorizer
+            self.LogisticRegression = LogisticRegression
+            self.dump = dump
+            self.load = load
+            self.make_pipeline = make_pipeline
+            logger.info("sklearn available - ML categorizer enabled")
+        except Exception as e:
+            logger.warning("sklearn not available. MLCategorizer disabled. Install scikit-learn and joblib for ML: pip install scikit-learn joblib")
+            return
+
+        # try load saved artifacts
+        try:
+            if ML_MODEL_FILE.exists() and VECT_FILE.exists() and LABELS_FILE.exists():
+                self.model = self.load(str(ML_MODEL_FILE))
+                self.vectorizer = self.load(str(VECT_FILE))
+                with open(LABELS_FILE, "r", encoding="utf-8") as fh:
+                    self.labels = json.load(fh)
+                self.available = True
+                logger.info("Loaded saved ML model and vectorizer.")
+                return
+        except Exception as e:
+            logger.warning(f"Failed to load saved ML artifacts: {e}")
+
+        # if persisted model not found, try to train from pilot dataset
+        if PILOT_DATA.exists():
+            try:
+                with open(PILOT_DATA, "r", encoding="utf-8") as fh:
+                    samples = json.load(fh)
+                texts = [s["ticket_content"] for s in samples]
+                y = [s["expected_category"] for s in samples]
+                if len(set(y)) < 2:
+                    logger.warning("Not enough label variety in pilot dataset to train ML model.")
+                    return
+                vect = self.TfidfVectorizer(ngram_range=(1,2), max_features=20000)
+                X = vect.fit_transform(texts)
+                clf = self.LogisticRegression(max_iter=200)
+                clf.fit(X, y)
+                # persist
+                self.dump(clf, str(ML_MODEL_FILE))
+                self.dump(vect, str(VECT_FILE))
+                with open(LABELS_FILE, "w", encoding="utf-8") as fh:
+                    json.dump(sorted(list(set(y))), fh)
+                self.model = clf
+                self.vectorizer = vect
+                self.labels = sorted(list(set(y)))
+                self.available = True
+                self.stats["trained"] = True
+                logger.info(f"Trained and saved ML model on {len(texts)} samples.")
+            except Exception as e:
+                logger.error(f"ML training failed: {e}")
+        else:
+            logger.warning(f"No pilot dataset found at {PILOT_DATA}. ML training skipped.")
+
+    def classify(self, text: str) -> Dict:
+        self.stats["total_predictions"] += 1
+        if not self.available or self.model is None or self.vectorizer is None:
+            return {"category": "general_query", "confidence": 0.0, "method": "ml_unavailable"}
+        try:
+            X = self.vectorizer.transform([text])
+            probs = self.model.predict_proba(X)[0]
+            pred = self.model.classes_[probs.argmax()]
+            confidence = float(probs.max())
+            return {"category": str(pred), "confidence": round(confidence, 2), "method": "ml_logreg"}
+        except Exception as e:
+            logger.error(f"ML classify error: {e}")
+            return {"category": "general_query", "confidence": 0.0, "method": "ml_error"}
+
+    def get_stats(self):
+        return self.stats
+
+# --- Combined Improved Categorizer (preserve API) ---
+class ImprovedCategorizer:
+    def __init__(self, llm_client=None):
+        # keep fast and llm
+        self.fast_categorizer = Categorizer()
+        self.llm_categorizer = LLMCategorizer(llm_client)
+        # new ML categorizer (may be disabled if sklearn missing)
+        self.ml_categorizer = MLCategorizer()
+        self.llm = llm_client
+        logger.info("Improved Categorizer initialized")
+
+    def classify_fast(self, text: str) -> Dict:
+        return self.fast_categorizer.classify(text)
+
+    def classify_llm(self, text: str) -> Dict:
+        return self.llm_categorizer.classify(text)
+
+    def classify_ml(self, text: str) -> Dict:
+        return self.ml_categorizer.classify(text)
+
+    def classify_hybrid(self, text: str) -> Dict:
+        """
+        Logic:
+         - If ML model available, use ML prediction + confidence threshold (>=0.6)
+         - If ML not available or low confidence (<0.6), use LLM if available and confident (>0.7)
+         - Else fallback to fast rules
+        """
+        # try ML first
+        ml_result = self.classify_ml(text)
+        if ml_result.get("method", "").startswith("ml") and ml_result.get("confidence", 0.0) >= 0.6:
+            res = ml_result.copy()
+            res["method"] = "hybrid_ml_preferred"
+            res["agreement"] = True
+            return res
+
+        # ML not confident: ask LLM if we have a client
+        llm_result = self.classify_llm(text)
+        if llm_result.get("method", "").startswith("llm") and llm_result.get("confidence", 0.0) >= 0.7:
+            res = llm_result.copy()
+            res["method"] = "hybrid_llm_preferred"
+            res["agreement"] = (ml_result.get("category") == llm_result.get("category"))
+            return res
+
+        # fallback to fast
+        fast_result = self.classify_fast(text)
+        # if fast agrees with ML, boost confidence
+        agreement = fast_result["category"] == ml_result.get("category")
+        if agreement and ml_result.get("confidence", 0) > 0:
+            # combine confidences slightly
+            combined_conf = min(0.98, 0.2 + fast_result.get("confidence", 0.3) + ml_result.get("confidence", 0))
+            fast_result["confidence"] = round(combined_conf, 2)
+            fast_result["method"] = "hybrid_fast_boosted"
+            fast_result["agreement"] = True
+            return fast_result
+
+        fast_result["agreement"] = False
+        return fast_result
+
+    def classify(self, text: str, method="hybrid") -> Dict:
+        if method == "fast":
+            return self.classify_fast(text)
+        if method == "llm":
+            return self.classify_llm(text)
+        if method == "ml":
+            return self.classify_ml(text)
+        return self.classify_hybrid(text)
+
+    def get_comprehensive_stats(self) -> Dict:
+        return {
+            "fast": self.fast_categorizer.get_stats(),
+            "llm": self.llm_categorizer.get_stats(),
+            "ml": self.ml_categorizer.get_stats(),
+            "categories_available": len(CATEGORIES)
+        }
+
+# End of file
+
+
+
+from pathlib import Path
+import json
+
+DATASET_PATH = Path("data/pilot_dataset.json")
+
+def load_standard_dataset():
+    """Return list of dataset entries (each is a dict)."""
+    if not DATASET_PATH.exists():
+        raise FileNotFoundError(f"Standard dataset not found at: {DATASET_PATH.resolve()}")
+    with DATASET_PATH.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+
+#!/usr/bin/env python3
+import json
+import time
+from collections import defaultdict
+from pathlib import Path
+
+from dataset_loader import load_standard_dataset
+
+# Attempt to import your Categorizer classes; adapt if your module names differ
+try:
+    from categorizer import Categorizer
+except Exception:
+    # Fallback: try alternative names
+    from categorizer import ImprovedCategorizer as Categorizer  # if exists
+
+REPORT_DIR = Path("data/validation_reports")
+REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+def _pred_to_cat(pred):
+    """Normalize categorizer output to category string."""
+    if pred is None:
+        return "error"
+    if isinstance(pred, str):
+        return pred
+    if isinstance(pred, dict):
+        # try common keys
+        for k in ("category", "label", "predicted", "class"):
+            if k in pred and pred[k]:
+                return str(pred[k])
+        # as fallback, if classifier returns ('category','confidence') pair structure
+        if "0" in pred and isinstance(pred["0"], str):
+            return pred["0"]
+        return str(pred)
+    return str(pred)
+
+def evaluate(categorizer):
+    dataset = load_standard_dataset()
+    total = len(dataset)
+    correct = 0
+    per_cat = defaultdict(lambda: {"tp":0,"fn":0,"fp":0,"support":0})
+    confusion = defaultdict(lambda: defaultdict(int))
+
+    for sample in dataset:
+        text = sample.get("ticket_content","")
+        expected = sample.get("expected_category","unknown")
+        per_cat[expected]["support"] += 1
+
+        try:
+            result = categorizer.classify(text)
+        except Exception as e:
+            # If classify fails, mark as error
+            predicted = "error"
+        else:
+            predicted = _pred_to_cat(result)
+
+        confusion[expected][predicted] += 1
+
+        if predicted == expected:
+            correct += 1
+            per_cat[expected]["tp"] += 1
+        else:
+            per_cat[expected]["fn"] += 1
+            per_cat[predicted]["fp"] += 1
+
+    accuracy = correct / total if total else 0.0
+
+    # Build simple per-category metrics
+    metrics = {}
+    for cat, vals in per_cat.items():
+        tp = vals["tp"]
+        fp = vals["fp"]
+        fn = vals["fn"]
+        precision = tp / (tp + fp) if (tp + fp) else 0.0
+        recall = tp / (tp + fn) if (tp + fn) else 0.0
+        f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) else 0.0
+        metrics[cat] = {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "support": vals.get("support", 0)
+        }
+
+    # Save report
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    report = {
+        "timestamp": timestamp,
+        "total_samples": total,
+        "correct": correct,
+        "accuracy": accuracy,
+        "per_category": metrics,
+        "confusion": {k: dict(v) for k,v in confusion.items()}
+    }
+    report_path = REPORT_DIR / f"evaluation_report_{timestamp}.json"
+    with report_path.open("w", encoding="utf-8") as fh:
+        json.dump(report, fh, indent=2)
+    return report, report_path
+
+def main():
+    print("Loading categorizer...")
+    c = Categorizer()  # instantiate your project's Categorizer
+    print("Loaded categorizer:", type(c).__name__)
+    print("Loading dataset...")
+    report, path = evaluate(c)
+    print(f"Evaluation completed. Accuracy: {report['accuracy']:.2%}")
+    print(f"Report saved to: {path}")
+
+if __name__ == "__main__":
+    main()
+
+
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.schema import Document
+
+# Step 3: Split documents into chunks
+def split_documents(
+    docs: list[Document],
+    chunk_size: int,
+    chunk_overlap: int
+) -> list[Document]:
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap
+    )
+    return splitter.split_documents(docs)
+
+# ---- Test the function ----
+if __name__ == "__main__":
+    # Example document (later you will replace this with Google Sheet or PDF data)
+    docs = [Document(page_content="This is a long text. We want to split it into chunks for RAG testing.")]
+    
+    chunks = split_documents(docs, chunk_size=20, chunk_overlap=5)
+    
+    print(f"✅ Total Chunks: {len(chunks)}")
+    for i, chunk in enumerate(chunks, 1):
+        print(f"Chunk {i}: {chunk.page_content}")
+
+
+# tagger.py - Semantic Tagging Module
+
+def semantic_tagging(text: str) -> dict:
+    tags = []
+    text_lower = text.lower()
+    
+    if "workspace" in text_lower:
+        tags.append("workspace_usage")
+    if "crash" in text_lower or "error" in text_lower:
+        tags.append("crash_error")
+    if "publish" in text_lower:
+        tags.append("publishing_process")
+    if "theme" in text_lower or "color" in text_lower:
+        tags.append("theme_customization")
+    if "language server" in text_lower or "intellisense" in text_lower:
+        tags.append("language_support_issue")
+    if "webview" in text_lower or "html" in text_lower or "css" in text_lower:
+        tags.append("webview_integration")
+    
+    return {"tags": tags}
+
+
+# vector_store.py
+
+import os
+from pathlib import Path
+from langchain_community.vectorstores import FAISS
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain.schema import Document
+
+INDEX_PATH = Path("vectorstore/db_faiss")  # Unified path with kb_processor.py
+
+def get_embeddings():
+    """Return GoogleGenerativeAIEmbeddings with explicit API key."""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("❌ GOOGLE_API_KEY not set. Please set it in environment variables.")
+    return GoogleGenerativeAIEmbeddings(
+        model="models/embedding-001",
+        google_api_key=api_key
+    )
+
+def create_vector_store(chunks: list[Document]):
+    """Build FAISS vector store from document chunks."""
+    if not chunks:
+        print("⚠️ No chunks provided to create vector store.")
+        return None
+    
+    try:
+        embeddings = get_embeddings()
+        vs = FAISS.from_documents(chunks, embeddings)
+
+        INDEX_PATH.mkdir(parents=True, exist_ok=True)
+        vs.save_local(str(INDEX_PATH))
+        print(f"✅ Saved FAISS index at {INDEX_PATH.resolve()}")
+        return vs
+        
+    except Exception as e:
+        print(f"❌ Error creating vector store: {str(e)}")
+        return None
+
+def load_vector_store():
+    """Load FAISS index if available."""
+    if not INDEX_PATH.exists():
+        raise FileNotFoundError(f"❌ FAISS index not found at {INDEX_PATH}. Run create_vector_store() first.")
+    
+    try:
+        embeddings = get_embeddings()
+        vs = FAISS.load_local(
+            str(INDEX_PATH),
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+        print(f"✅ Loaded FAISS index from {INDEX_PATH.resolve()}")
+        return vs
+        
+    except Exception as e:
+        print(f"❌ Error loading vector store: {str(e)}")
+        return None
+
+def search_similar(query: str, k: int = 5):
+    """Search for similar documents in the vector store."""
+    try:
+        vs = load_vector_store()
+        if vs is None:
+            return []
+        
+        results = vs.similarity_search(query, k=k)
+        print(f"🔍 Found {len(results)} similar documents for query: '{query}'")
+        return results
+        
+    except Exception as e:
+        print(f"❌ Error searching vector store: {str(e)}")
+        return []
+
+# --- Quick test ---
+if __name__ == "__main__":
+    print("🧪 Testing vector store functionality...")
+    
+    # Test documents
+    test_docs = [
+        Document(page_content="This is a long text about machine learning and artificial intelligence."),
+        Document(page_content="We want to split it into chunks for RAG testing and information retrieval."),
+        Document(page_content="Vector stores are essential for semantic search in modern AI applications.")
+    ]
+
+    # Create and test vector store
+    print("\n1️⃣ Creating vector store...")
+    vs = create_vector_store(test_docs)
+    
+    if vs:
+        print("\n2️⃣ Testing search functionality...")
+        results = search_similar("RAG testing", k=2)
+        
+        print("\n📋 Search results:")
+        for i, result in enumerate(results, 1):
+            print(f"{i}. {result.page_content}")
+    else:
+        print("❌ Failed to create test vector store.")

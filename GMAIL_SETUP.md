@@ -1,4 +1,3 @@
-
 # Gmail App Password Setup Instructions
 
 ## Step 1: Enable 2-Factor Authentication
@@ -20,7 +19,7 @@
 3. Save the file
 
 ## Step 4: Test Email
-1. Run the application
+1. Run: python launch_production.py
 2. Go to Admin Dashboard → Notifications
 3. Click "Send Test Email" to verify email functionality
 

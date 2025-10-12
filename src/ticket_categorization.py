@@ -13,6 +13,24 @@ class TicketCategorizer:
     def __init__(self):
         # Define categories with keywords and patterns
         self.categories = {
+            "Publishing": {
+                "keywords": [
+                    "publish", "publishing", "marketplace", "vsce", "vsix",
+                    "publisher", "personal access token", "pat", "login vsce",
+                    "verify publisher", "extension id"
+                ],
+                "patterns": [
+                    r"vsce\s+(publish|package|login)", r"visual studio marketplace",
+                    r"create\s+publisher", r"publish\s+extension"
+                ]
+            },
+            "Getting Started": {
+                "keywords": [
+                    "build an extension", "create extension", "getting started",
+                    "first extension", "hello world", "scaffold", "yo code"
+                ],
+                "patterns": [r"build\s+(a|an)\s+extension", r"create\s+(a|an)\s+extension"]
+            },
             "Bug Report": {
                 "keywords": ["bug", "error", "crash", "broken", "not working", "issue", "problem", 
                             "exception", "fail", "doesn't work", "stopped working", "malfunction"],
@@ -65,8 +83,9 @@ class TicketCategorizer:
         
         # Category priority (higher priority categories checked first)
         self.category_priority = [
-            "Authentication", "Bug Report", "Technical Issue", "Performance", 
-            "Integration", "Feature Request", "UI/UX", "Documentation"
+            "Publishing", "Getting Started", "Authentication", "Bug Report",
+            "Technical Issue", "Performance", "Integration", "Feature Request",
+            "UI/UX", "Documentation"
         ]
     
     def categorize_ticket(self, content: str, title: str = "") -> Tuple[str, float, Dict]:
@@ -109,6 +128,19 @@ class TicketCategorizer:
     
     def _calculate_category_score(self, text: str, category: str, analysis_details: Dict) -> float:
         """Calculate score for a specific category"""
+        keywords = {
+            "Publishing": ["publish", "publishing", "marketplace", "vsce", "vsix", "publisher"],
+            "Getting Started": ["build an extension", "create extension", "getting started", "hello world"],
+            "Authentication": ["login", "signin", "sign in", "password", "auth", "token"],
+            "Bug Report": ["bug", "issue", "unexpected", "wrong", "incorrect"],
+            "Technical Issue": ["error", "crash", "failed", "not responding"],
+            "Performance": ["slow", "lag", "performance", "optimize", "speed"],
+            "Integration": ["api", "integration", "connect", "third-party", "webhook"],
+            "Feature Request": ["feature", "request", "add", "enhancement", "support"],
+            "UI/UX": ["ui", "ux", "interface", "design", "layout", "theme"],
+            "Documentation": ["docs", "documentation", "guide", "manual", "readme"],
+        }
+
         score = 0.0
         category_data = self.categories[category]
         
